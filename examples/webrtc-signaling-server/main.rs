@@ -1,6 +1,11 @@
-use warp::ws::{WebSocket, Ws};
-use warp::{Filter, Rejection, Reply};
-use yrs_warp::signaling::{signaling_conn, SignalingService};
+use axum::{
+    extract::{ws::{WebSocket, WebSocketUpgrade}, State},
+    response::IntoResponse,
+    routing::get,
+    Router,
+};
+use tower_http::services::ServeDir;
+use yrs_axum::signaling::{signaling_conn, SignalingService};
 
 const STATIC_FILES_DIR: &str = "examples/webrtc-signaling-server/frontend/dist";
 
@@ -8,20 +13,24 @@ const STATIC_FILES_DIR: &str = "examples/webrtc-signaling-server/frontend/dist";
 async fn main() {
     let signaling = SignalingService::new();
 
-    let static_files = warp::get().and(warp::fs::dir(STATIC_FILES_DIR));
+    let app = Router::new()
+        .route("/signaling", get(ws_handler))
+        .fallback_service(ServeDir::new(STATIC_FILES_DIR))
+        .with_state(signaling);
 
-    let ws = warp::path("signaling")
-        .and(warp::ws())
-        .and(warp::any().map(move || signaling.clone()))
-        .and_then(ws_handler);
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:8000").await.unwrap();
+    println!("Listening on {}", listener.local_addr().unwrap());
 
-    let routes = ws.or(static_files);
-
-    warp::serve(routes).run(([0, 0, 0, 0], 8000)).await;
+    axum::serve(listener, app.into_make_service())
+        .await
+        .unwrap();
 }
 
-async fn ws_handler(ws: Ws, svc: SignalingService) -> Result<impl Reply, Rejection> {
-    Ok(ws.on_upgrade(move |socket| peer(socket, svc)))
+async fn ws_handler(
+    ws: WebSocketUpgrade,
+    State(svc): State<SignalingService>,
+) -> impl IntoResponse {
+    ws.on_upgrade(move |socket| peer(socket, svc))
 }
 
 async fn peer(ws: WebSocket, svc: SignalingService) {

@@ -17,4 +17,4 @@ Once the steps above are done, a `./frontent/dist` directory should appear. If s
 cargo run --example webrtc-signaling-server
 ```
 
-It will run a local warp server with an index page at [http://localhost:8000](http://localhost:8000).
+It will run a local axum server with an index page at [http://localhost:8000](http://localhost:8000).

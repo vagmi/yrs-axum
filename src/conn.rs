@@ -61,9 +61,9 @@ where
     /// Wraps incoming [WebSocket] connection and supplied [Awareness] accessor into a new
     /// connection handler capable of exchanging Yrs/Yjs messages.
     ///
-    /// While creation of new [WarpConn] always succeeds, a connection itself can possibly fail
+    /// While creation of new [AxumConn] always succeeds, a connection itself can possibly fail
     /// while processing incoming input/output. This can be detected by awaiting for returned
-    /// [WarpConn] and handling the awaited result.
+    /// [AxumConn] and handling the awaited result.
     pub fn new(awareness: Arc<RwLock<Awareness>>, sink: Sink, stream: Stream) -> Self {
         Self::with_protocol(awareness, sink, stream, DefaultProtocol)
     }
@@ -76,9 +76,9 @@ where
     /// Wraps incoming [WebSocket] connection and supplied [Awareness] accessor into a new
     /// connection handler capable of exchanging Yrs/Yjs messages.
     ///
-    /// While creation of new [WarpConn] always succeeds, a connection itself can possibly fail
+    /// While creation of new [AxumConn] always succeeds, a connection itself can possibly fail
     /// while processing incoming input/output. This can be detected by awaiting for returned
-    /// [WarpConn] and handling the awaited result.
+    /// [AxumConn] and handling the awaited result.
     pub fn with_protocol<P>(
         awareness: Arc<RwLock<Awareness>>,
         sink: Sink,

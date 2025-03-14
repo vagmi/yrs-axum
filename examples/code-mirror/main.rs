@@ -1,13 +1,16 @@
 use futures_util::StreamExt;
 use std::sync::Arc;
+use std::net::SocketAddr;
 use tokio::sync::{Mutex, RwLock};
-use warp::ws::{WebSocket, Ws};
-use warp::{Filter, Rejection, Reply};
+use axum::{
+    extract::{ws::{WebSocket, WebSocketUpgrade}, State}, response::IntoResponse, routing::get, serve::Listener, Router
+};
+use tower_http::services::ServeDir;
 use yrs::sync::Awareness;
 use yrs::{Doc, Text, Transact};
-use yrs_warp::broadcast::BroadcastGroup;
-use yrs_warp::ws::{WarpSink, WarpStream};
-use yrs_warp::AwarenessRef;
+use yrs_axum::broadcast::BroadcastGroup;
+use yrs_axum::ws::{AxumSink, AxumStream};
+use yrs_axum::AwarenessRef;
 
 const STATIC_FILES_DIR: &str = "examples/code-mirror/frontend/dist";
 
@@ -34,26 +37,32 @@ async fn main() {
     // and has a pending message buffer of up to 32 updates
     let bcast = Arc::new(BroadcastGroup::new(awareness.clone(), 32).await);
 
-    let static_files = warp::get().and(warp::fs::dir(STATIC_FILES_DIR));
+    // Create a router with our WebSocket handler and static file service
+    let app = Router::new()
+        .route("/my-room", get(ws_handler))
+        .fallback_service(ServeDir::new(STATIC_FILES_DIR))
+        .with_state(bcast);
 
-    let ws = warp::path("my-room")
-        .and(warp::ws())
-        .and(warp::any().map(move || bcast.clone()))
-        .and_then(ws_handler);
-
-    let routes = ws.or(static_files);
-
-    warp::serve(routes).run(([0, 0, 0, 0], 8000)).await;
+    // Start the server
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:8000").await.unwrap();
+    println!("Listening on {}", &listener.local_addr().unwrap());
+    
+    axum::serve(listener, app.into_make_service())
+        .await
+        .unwrap();
 }
 
-async fn ws_handler(ws: Ws, bcast: Arc<BroadcastGroup>) -> Result<impl Reply, Rejection> {
-    Ok(ws.on_upgrade(move |socket| peer(socket, bcast)))
+async fn ws_handler(
+    ws: WebSocketUpgrade,
+    State(bcast): State<Arc<BroadcastGroup>>,
+) -> impl IntoResponse {
+    ws.on_upgrade(move |socket| peer(socket, bcast))
 }
 
 async fn peer(ws: WebSocket, bcast: Arc<BroadcastGroup>) {
     let (sink, stream) = ws.split();
-    let sink = Arc::new(Mutex::new(WarpSink::from(sink)));
-    let stream = WarpStream::from(stream);
+    let sink = Arc::new(Mutex::new(AxumSink::from(sink)));
+    let stream = AxumStream::from(stream);
     let sub = bcast.subscribe(sink, stream);
     match sub.completed().await {
         Ok(_) => println!("broadcasting for channel finished successfully"),

@@ -4,7 +4,7 @@ use futures_util::stream::{SplitSink, SplitStream};
 use futures_util::{Stream, StreamExt};
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use warp::ws::{Message, WebSocket};
+use axum::extract::ws::{WebSocket, Message};
 use yrs::sync::Error;
 
 /// Connection Wrapper over a [WebSocket], which implements a Yjs/Yrs awareness and update exchange
@@ -14,17 +14,17 @@ use yrs::sync::Error;
 /// recognize whether underlying websocket connection has been finished gracefully or abruptly.
 #[repr(transparent)]
 #[derive(Debug)]
-pub struct WarpConn(Connection<WarpSink, WarpStream>);
+pub struct AxumConn(Connection<AxumSink, AxumStream>);
 
-impl WarpConn {
+impl AxumConn {
     pub fn new(awareness: AwarenessRef, socket: WebSocket) -> Self {
         let (sink, stream) = socket.split();
-        let conn = Connection::new(awareness, WarpSink(sink), WarpStream(stream));
-        WarpConn(conn)
+        let conn = Connection::new(awareness, AxumSink(sink), AxumStream(stream));
+        AxumConn(conn)
     }
 }
 
-impl core::future::Future for WarpConn {
+impl core::future::Future for AxumConn {
     type Output = Result<(), Error>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
@@ -36,7 +36,7 @@ impl core::future::Future for WarpConn {
     }
 }
 
-/// A warp websocket sink wrapper, that implements futures `Sink` in a way, that makes it compatible
+/// An axum websocket sink wrapper, that implements futures `Sink` in a way, that makes it compatible
 /// with y-sync protocol, so that it can be used by y-sync crate [BroadcastGroup].
 ///
 /// # Examples
@@ -45,38 +45,48 @@ impl core::future::Future for WarpConn {
 /// use std::net::SocketAddr;
 /// use std::str::FromStr;
 /// use std::sync::Arc;
-/// use futures_util::StreamExt;
 /// use tokio::sync::Mutex;
 /// use tokio::task::JoinHandle;
-/// use warp::{Filter, Rejection, Reply};
-/// use warp::ws::{WebSocket, Ws};
-/// use yrs_warp::broadcast::BroadcastGroup;
-/// use yrs_warp::ws::{WarpSink, WarpStream};
+/// use axum::{
+///     Router,
+///     routing::get,
+///     extract::ws::{WebSocket, WebSocketUpgrade},
+///     extract::State,
+///     response::IntoResponse,
+/// };
+/// use yrs_axum::broadcast::BroadcastGroup;
+/// use yrs_axum::ws::{AxumSink, AxumStream};
 ///
 /// async fn start_server(
 ///     addr: &str,
 ///     bcast: Arc<BroadcastGroup>,
 /// ) -> Result<JoinHandle<()>, Box<dyn std::error::Error>> {
 ///     let addr = SocketAddr::from_str(addr)?;
-///     let ws = warp::path("my-room")
-///         .and(warp::ws())
-///         .and(warp::any().map(move || bcast.clone()))
-///         .and_then(ws_handler);
+///     let listener = tokio::net::TcpListener::bind(addr).await?;
+///     
+///     let app = Router::new()
+///         .route("/my-room", get(ws_handler))
+///         .with_state(bcast);
 ///
 ///     Ok(tokio::spawn(async move {
-///         warp::serve(ws).run(addr).await;
+///         axum::serve(listener, app.into_make_service())
+///             .await
+///             .unwrap();
 ///     }))
 /// }
 ///
-/// async fn ws_handler(ws: Ws, bcast: Arc<BroadcastGroup>) -> Result<impl Reply, Rejection> {
-///     Ok(ws.on_upgrade(move |socket| peer(socket, bcast)))
+/// async fn ws_handler(
+///     ws: WebSocketUpgrade,
+///     State(bcast): State<Arc<BroadcastGroup>>,
+/// ) -> impl IntoResponse {
+///     ws.on_upgrade(move |socket| peer(socket, bcast))
 /// }
 ///
 /// async fn peer(ws: WebSocket, bcast: Arc<BroadcastGroup>) {
 ///     let (sink, stream) = ws.split();
-///     // convert warp web socket into compatible sink/stream
-///     let sink = Arc::new(Mutex::new(WarpSink::from(sink)));
-///     let stream = WarpStream::from(stream);
+///     // convert axum web socket into compatible sink/stream
+///     let sink = Arc::new(Mutex::new(AxumSink(sink)));
+///     let stream = AxumStream(stream);
 ///     // subscribe to broadcast group
 ///     let sub = bcast.subscribe(sink, stream);
 ///     // wait for subscribed connection to close itself
@@ -88,21 +98,21 @@ impl core::future::Future for WarpConn {
 /// ```
 #[repr(transparent)]
 #[derive(Debug)]
-pub struct WarpSink(SplitSink<WebSocket, Message>);
+pub struct AxumSink(SplitSink<WebSocket, Message>);
 
-impl From<SplitSink<WebSocket, Message>> for WarpSink {
+impl From<SplitSink<WebSocket, Message>> for AxumSink {
     fn from(sink: SplitSink<WebSocket, Message>) -> Self {
-        WarpSink(sink)
+        AxumSink(sink)
     }
 }
 
-impl Into<SplitSink<WebSocket, Message>> for WarpSink {
+impl Into<SplitSink<WebSocket, Message>> for AxumSink {
     fn into(self) -> SplitSink<WebSocket, Message> {
         self.0
     }
 }
 
-impl futures_util::Sink<Vec<u8>> for WarpSink {
+impl futures_util::Sink<Vec<u8>> for AxumSink {
     type Error = Error;
 
     fn poll_ready(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
@@ -138,7 +148,7 @@ impl futures_util::Sink<Vec<u8>> for WarpSink {
     }
 }
 
-/// A warp websocket stream wrapper, that implements futures `Stream` in a way, that makes it compatible
+/// An axum websocket stream wrapper, that implements futures `Stream` in a way, that makes it compatible
 /// with y-sync protocol, so that it can be used by y-sync crate [BroadcastGroup].
 ///
 /// # Examples
@@ -147,38 +157,48 @@ impl futures_util::Sink<Vec<u8>> for WarpSink {
 /// use std::net::SocketAddr;
 /// use std::str::FromStr;
 /// use std::sync::Arc;
-/// use futures_util::StreamExt;
 /// use tokio::sync::Mutex;
 /// use tokio::task::JoinHandle;
-/// use warp::{Filter, Rejection, Reply};
-/// use warp::ws::{WebSocket, Ws};
-/// use yrs_warp::broadcast::BroadcastGroup;
-/// use yrs_warp::ws::{WarpSink, WarpStream};
+/// use axum::{
+///     Router,
+///     routing::get,
+///     extract::ws::{WebSocket, WebSocketUpgrade},
+///     extract::State,
+///     response::IntoResponse,
+/// };
+/// use yrs_axum::broadcast::BroadcastGroup;
+/// use yrs_axum::ws::{AxumSink, AxumStream};
 ///
 /// async fn start_server(
 ///     addr: &str,
 ///     bcast: Arc<BroadcastGroup>,
 /// ) -> Result<JoinHandle<()>, Box<dyn std::error::Error>> {
 ///     let addr = SocketAddr::from_str(addr)?;
-///     let ws = warp::path("my-room")
-///         .and(warp::ws())
-///         .and(warp::any().map(move || bcast.clone()))
-///         .and_then(ws_handler);
+///     let listener = tokio::net::TcpListener::bind(addr).await?;
+///     
+///     let app = Router::new()
+///         .route("/my-room", get(ws_handler))
+///         .with_state(bcast);
 ///
 ///     Ok(tokio::spawn(async move {
-///         warp::serve(ws).run(addr).await;
+///         axum::serve(listener, app.into_make_service())
+///             .await
+///             .unwrap();
 ///     }))
 /// }
 ///
-/// async fn ws_handler(ws: Ws, bcast: Arc<BroadcastGroup>) -> Result<impl Reply, Rejection> {
-///     Ok(ws.on_upgrade(move |socket| peer(socket, bcast)))
+/// async fn ws_handler(
+///     ws: WebSocketUpgrade,
+///     State(bcast): State<Arc<BroadcastGroup>>,
+/// ) -> impl IntoResponse {
+///     ws.on_upgrade(move |socket| peer(socket, bcast))
 /// }
 ///
 /// async fn peer(ws: WebSocket, bcast: Arc<BroadcastGroup>) {
 ///     let (sink, stream) = ws.split();
-///     // convert warp web socket into compatible sink/stream
-///     let sink = Arc::new(Mutex::new(WarpSink::from(sink)));
-///     let stream = WarpStream::from(stream);
+///     // convert axum web socket into compatible sink/stream
+///     let sink = Arc::new(Mutex::new(AxumSink(sink)));
+///     let stream = AxumStream(stream);
 ///     // subscribe to broadcast group
 ///     let sub = bcast.subscribe(sink, stream);
 ///     // wait for subscribed connection to close itself
@@ -189,21 +209,21 @@ impl futures_util::Sink<Vec<u8>> for WarpSink {
 /// }
 /// ```
 #[derive(Debug)]
-pub struct WarpStream(SplitStream<WebSocket>);
+pub struct AxumStream(SplitStream<WebSocket>);
 
-impl From<SplitStream<WebSocket>> for WarpStream {
+impl From<SplitStream<WebSocket>> for AxumStream {
     fn from(stream: SplitStream<WebSocket>) -> Self {
-        WarpStream(stream)
+        AxumStream(stream)
     }
 }
 
-impl Into<SplitStream<WebSocket>> for WarpStream {
+impl Into<SplitStream<WebSocket>> for AxumStream {
     fn into(self) -> SplitStream<WebSocket> {
         self.0
     }
 }
 
-impl Stream for WarpStream {
+impl Stream for AxumStream {
     type Item = Result<Vec<u8>, Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
@@ -211,7 +231,7 @@ impl Stream for WarpStream {
             Poll::Pending => Poll::Pending,
             Poll::Ready(None) => Poll::Ready(None),
             Poll::Ready(Some(res)) => match res {
-                Ok(item) => Poll::Ready(Some(Ok(item.into_bytes()))),
+                Ok(item) => Poll::Ready(Some(Ok(item.into_data().to_vec()))),
                 Err(e) => Poll::Ready(Some(Err(Error::Other(e.into())))),
             },
         }
@@ -222,12 +242,10 @@ impl Stream for WarpStream {
 mod test {
     use crate::broadcast::BroadcastGroup;
     use crate::conn::Connection;
-    use crate::ws::{WarpSink, WarpStream};
+    use crate::ws::{AxumSink, AxumStream};
     use futures_util::stream::{SplitSink, SplitStream};
     use futures_util::{ready, SinkExt, Stream, StreamExt};
-    use std::net::SocketAddr;
     use std::pin::Pin;
-    use std::str::FromStr;
     use std::sync::Arc;
     use std::task::{Context, Poll};
     use std::time::Duration;
@@ -238,8 +256,13 @@ mod test {
     use tokio::time::{sleep, timeout};
     use tokio_tungstenite::tungstenite::Message;
     use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
-    use warp::ws::{WebSocket, Ws};
-    use warp::{Filter, Rejection, Reply, Sink};
+    use axum::{
+        Router,
+        routing::get,
+        extract::ws::{WebSocket, WebSocketUpgrade},
+        extract::State,
+        response::IntoResponse,
+    };
     use yrs::sync::{Awareness, Error};
     use yrs::updates::encoder::Encode;
     use yrs::{Doc, GetString, Subscription, Text, Transact};
@@ -248,25 +271,30 @@ mod test {
         addr: &str,
         bcast: Arc<BroadcastGroup>,
     ) -> Result<JoinHandle<()>, Box<dyn std::error::Error>> {
-        let addr = SocketAddr::from_str(addr)?;
-        let ws = warp::path("my-room")
-            .and(warp::ws())
-            .and(warp::any().map(move || bcast.clone()))
-            .and_then(ws_handler);
+        let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
+        
+        let app = Router::new()
+            .route("/my-room", get(ws_handler))
+            .with_state(bcast);
 
         Ok(tokio::spawn(async move {
-            warp::serve(ws).run(addr).await;
+            axum::serve(listener, app.into_make_service())
+                .await
+                .unwrap();
         }))
     }
 
-    async fn ws_handler(ws: Ws, bcast: Arc<BroadcastGroup>) -> Result<impl Reply, Rejection> {
-        Ok(ws.on_upgrade(move |socket| peer(socket, bcast)))
+    async fn ws_handler(
+        ws: WebSocketUpgrade,
+        State(bcast): State<Arc<BroadcastGroup>>,
+    ) -> impl IntoResponse {
+        ws.on_upgrade(move |socket| peer(socket, bcast))
     }
 
     async fn peer(ws: WebSocket, bcast: Arc<BroadcastGroup>) {
         let (sink, stream) = ws.split();
-        let sink = Arc::new(Mutex::new(WarpSink::from(sink)));
-        let stream = WarpStream::from(stream);
+        let sink = Arc::new(Mutex::new(AxumSink(sink)));
+        let stream = AxumStream(stream);
         let sub = bcast.subscribe(sink, stream);
         match sub.completed().await {
             Ok(_) => println!("broadcasting for channel finished successfully"),
@@ -276,7 +304,7 @@ mod test {
 
     struct TungsteniteSink(SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>);
 
-    impl Sink<Vec<u8>> for TungsteniteSink {
+    impl futures_util::Sink<Vec<u8>> for TungsteniteSink {
         type Error = Error;
 
         fn poll_ready(

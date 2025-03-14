@@ -1,5 +1,9 @@
 # Yrs web socket connections for Axum
 
+[![build](https://github.com/vagmi/yrs-axum/actions/workflows/build.yml/badge.svg)](https://github.com/vagmi/yrs-axum/actions/workflows/build.yml)
+[![docs](https://docs.rs/yrs-axum/badge.svg)](docs)
+[![crates.io](https://img.shields.io/crates/v/yrs-axum)](https://crates.io/crates/yrs-axum)
+
 This library is an extension over [Yjs](https://yjs.dev)/[Yrs](https://github.com/y-crdt/y-crdt) Conflict-Free Replicated Data Types (CRDT) 
 message exchange protocol. It provides an utilities connect with Yjs web socket provider using the
 [axum](https://github.com/tokio-rs/axum) server.

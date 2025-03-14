@@ -47,6 +47,7 @@ impl core::future::Future for AxumConn {
 /// use std::sync::Arc;
 /// use tokio::sync::Mutex;
 /// use tokio::task::JoinHandle;
+/// use futures_util::stream::StreamExt;
 /// use axum::{
 ///     Router,
 ///     routing::get,
@@ -98,7 +99,7 @@ impl core::future::Future for AxumConn {
 /// ```
 #[repr(transparent)]
 #[derive(Debug)]
-pub struct AxumSink(SplitSink<WebSocket, Message>);
+pub struct AxumSink(pub SplitSink<WebSocket, Message>);
 
 impl From<SplitSink<WebSocket, Message>> for AxumSink {
     fn from(sink: SplitSink<WebSocket, Message>) -> Self {
@@ -159,6 +160,7 @@ impl futures_util::Sink<Vec<u8>> for AxumSink {
 /// use std::sync::Arc;
 /// use tokio::sync::Mutex;
 /// use tokio::task::JoinHandle;
+/// use futures_util::stream::StreamExt;
 /// use axum::{
 ///     Router,
 ///     routing::get,
@@ -209,7 +211,7 @@ impl futures_util::Sink<Vec<u8>> for AxumSink {
 /// }
 /// ```
 #[derive(Debug)]
-pub struct AxumStream(SplitStream<WebSocket>);
+pub struct AxumStream(pub SplitStream<WebSocket>);
 
 impl From<SplitStream<WebSocket>> for AxumStream {
     fn from(stream: SplitStream<WebSocket>) -> Self {

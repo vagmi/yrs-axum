@@ -42,9 +42,17 @@ const PING_TIMEOUT: Duration = Duration::from_secs(30);
 ///         .route("/signaling", get(ws_handler))
 ///         .with_state(signaling);
 ///
+///     let (tx, rx) = tokio::sync::oneshot::channel::<bool>();
+///     tokio::spawn(async move {
 ///     axum::serve(listener, app.into_make_service())
+///         .with_graceful_shutdown(async move {
+///           rx.await.unwrap();
+///         })
 ///         .await
 ///         .unwrap();
+///     });
+///     tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+///     tx.send(true);
 /// }
 ///
 /// async fn ws_handler(

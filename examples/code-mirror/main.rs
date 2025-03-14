@@ -1,9 +1,10 @@
 use futures_util::StreamExt;
 use std::sync::Arc;
-use std::net::SocketAddr;
 use tokio::sync::{Mutex, RwLock};
 use axum::{
-    extract::{ws::{WebSocket, WebSocketUpgrade}, State}, response::IntoResponse, routing::get, serve::Listener, Router
+    extract::{ws::{WebSocket, WebSocketUpgrade}, State}, 
+    response::IntoResponse, 
+    routing::get, Router
 };
 use tower_http::services::ServeDir;
 use yrs::sync::Awareness;

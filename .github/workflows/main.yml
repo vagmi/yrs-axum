@@ -1,4 +1,4 @@
-name: Main
+name: Build and test crate
 
 on:
   push:
@@ -19,23 +19,28 @@ jobs:
     steps:
 
       - name: checkout sources
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
       - name: install Rust toolchain
         uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
           override: true
+          components: rustfmt, clippy
+
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
 
       - name: build default
         run: cargo build --verbose --release
-
-  test-linux:
-    runs-on: ubuntu-latest
-    needs: build
-    steps:
-      - name: checkout sources
-        uses: actions/checkout@v2
 
       - name: test
         run: cargo test --release
